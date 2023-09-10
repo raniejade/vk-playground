@@ -7,7 +7,15 @@ pub struct RuntimeContext {
     main_window: Window,
 }
 
-impl RuntimeContext {}
+impl RuntimeContext {
+    pub fn glfw(&self) -> &Glfw {
+        &self.glfw
+    }
+
+    pub fn main_window(&self) -> &Window {
+        &self.main_window
+    }
+}
 
 pub trait App {
     fn should_auto_close(&self) -> bool {
@@ -15,9 +23,16 @@ pub trait App {
     }
 
     fn get_title(&mut self) -> anyhow::Result<String>;
+
+    fn init(&mut self, ctx: &mut RuntimeContext) -> anyhow::Result<()> {
+        Ok(())
+    }
+
     fn event(&mut self, ctx: &mut RuntimeContext, event: WindowEvent) -> anyhow::Result<()> {
         Ok(())
     }
+
+
     fn frame(&mut self, ctx: &mut RuntimeContext) -> anyhow::Result<()>;
 }
 
