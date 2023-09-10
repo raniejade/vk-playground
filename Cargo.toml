@@ -1,0 +1,17 @@
+[workspace]
+members = [
+    "runtime",
+    "pg01_triangle"
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+
+[workspace.dependencies]
+glfw = { version = "0.52.0", features = ["vulkan"] }
+ash = { version = "0.37.3", features = ["linked"] }
+anyhow = "1.0.74"
+ash-window = "0.12.0"
+raw-window-handle = "0.5.2"
+gpu-allocator = "0.22.0"
