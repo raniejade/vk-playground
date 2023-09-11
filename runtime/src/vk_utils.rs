@@ -3,9 +3,9 @@ use std::ffi::{c_char, CStr, CString};
 
 use anyhow::{bail, Context};
 use ash::{Device, Entry, Instance, vk};
-use ash::vk::{API_VERSION_1_2, ApplicationInfo, InstanceCreateInfo};
+use ash::vk::{API_VERSION_1_2, ApplicationInfo, InstanceCreateInfo, SurfaceKHR};
 use ash_window::enumerate_required_extensions;
-use raw_window_handle::HasRawDisplayHandle;
+use raw_window_handle::{HasRawDisplayHandle, HasRawWindowHandle};
 use vk::{DeviceCreateInfo, DeviceQueueCreateInfo, PhysicalDevice, PhysicalDeviceDynamicRenderingFeaturesKHR, PhysicalDeviceFeatures, PhysicalDeviceType};
 
 pub fn create_entry() -> anyhow::Result<Entry> {
@@ -182,4 +182,21 @@ pub fn create_device(
             .create_device(physical_device, &device_create_info, None)
             .expect("create_device successful."))
     }
+}
+
+pub fn create_surface(
+    entry: &Entry,
+    instance: &Instance,
+    window: &(impl HasRawDisplayHandle + HasRawWindowHandle),
+) -> anyhow::Result<SurfaceKHR> {
+    let vk_surface = unsafe {
+        ash_window::create_surface(
+            entry,
+            instance,
+            window.raw_display_handle(),
+            window.raw_window_handle(),
+            None,
+        )?
+    };
+    Ok(vk_surface)
 }

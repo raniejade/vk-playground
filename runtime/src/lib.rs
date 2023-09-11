@@ -3,12 +3,12 @@ use std::mem::ManuallyDrop;
 
 use anyhow::Context;
 use ash::{Device, Entry, Instance};
-use ash::vk::{PhysicalDevice, Queue};
+use ash::vk::{PhysicalDevice, Queue, SurfaceKHR};
 use glfw::{Action, Glfw, Key, Window, WindowEvent, WindowHint, WindowMode};
 use glfw::ClientApiHint::NoApi;
 use raw_window_handle::HasRawDisplayHandle;
 
-use crate::vk_utils::{create_device, create_entry, create_instance, find_queue_family_indices, select_physical_device};
+use crate::vk_utils::{create_device, create_entry, create_instance, create_surface, find_queue_family_indices, select_physical_device};
 
 mod vk_utils;
 
@@ -48,6 +48,10 @@ impl Vk {
         &self.entry
     }
 
+    pub fn instance(&self) -> &Instance {
+        &self.instance
+    }
+
     pub fn physical_device(&self) -> &PhysicalDevice {
         &self.physical_device
     }
@@ -76,13 +80,14 @@ impl Drop for Vk {
     }
 }
 
-pub struct RuntimeContext {
+pub struct AppContext {
     glfw: Glfw,
     main_window: Window,
+    main_surface: SurfaceKHR,
     vk: Vk,
 }
 
-impl RuntimeContext {
+impl AppContext {
     pub fn glfw(&self) -> &Glfw {
         &self.glfw
     }
@@ -99,16 +104,16 @@ pub trait App {
 
     fn get_title(&mut self) -> anyhow::Result<String>;
 
-    fn init(&mut self, ctx: &mut RuntimeContext) -> anyhow::Result<()> {
+    fn init(&mut self, ctx: &mut AppContext) -> anyhow::Result<()> {
         Ok(())
     }
 
-    fn event(&mut self, ctx: &mut RuntimeContext, event: WindowEvent) -> anyhow::Result<()> {
+    fn event(&mut self, ctx: &mut AppContext, event: WindowEvent) -> anyhow::Result<()> {
         Ok(())
     }
 
 
-    fn frame(&mut self, ctx: &mut RuntimeContext) -> anyhow::Result<()>;
+    fn frame(&mut self, ctx: &mut AppContext) -> anyhow::Result<()>;
 }
 
 pub fn run(mut app: impl App) -> anyhow::Result<()> {
@@ -118,7 +123,8 @@ pub fn run(mut app: impl App) -> anyhow::Result<()> {
     main_window.set_key_polling(true);
 
     let vk = Vk::new(&main_window)?;
-    let mut ctx = RuntimeContext { glfw, main_window, vk };
+    let main_surface = create_surface(vk.entry(), vk.instance(), &main_window)?;
+    let mut ctx = AppContext { glfw, main_window, main_surface, vk };
 
     while !ctx.main_window.should_close() {
         app.frame(&mut ctx)?;

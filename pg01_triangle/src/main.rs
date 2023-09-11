@@ -1,4 +1,4 @@
-use runtime::{App, RuntimeContext};
+use runtime::{App, AppContext};
 
 struct MyApp;
 
@@ -7,7 +7,7 @@ impl App for MyApp {
         Ok(String::from("Triangle"))
     }
 
-    fn frame(&mut self, ctx: &mut RuntimeContext) -> anyhow::Result<()> {
+    fn frame(&mut self, ctx: &mut AppContext) -> anyhow::Result<()> {
         Ok(())
     }
 }
