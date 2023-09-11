@@ -1,37 +1,75 @@
-use std::collections::HashSet;
-use std::ffi::{c_char, CStr, CString};
+use std::ffi::{CStr, CString};
 use std::mem::ManuallyDrop;
 
 use anyhow::Context;
-use ash::{Entry, Instance, vk};
-use ash::vk::ApplicationInfo;
-use ash_window::enumerate_required_extensions;
+use ash::{Device, Entry, Instance};
+use ash::vk::{PhysicalDevice, Queue};
 use glfw::{Action, Glfw, Key, Window, WindowEvent, WindowHint, WindowMode};
 use glfw::ClientApiHint::NoApi;
 use raw_window_handle::HasRawDisplayHandle;
-use vk::{API_VERSION_1_2, InstanceCreateInfo};
+
+use crate::vk_utils::{create_device, create_entry, create_instance, find_queue_family_indices, select_physical_device};
+
+mod vk_utils;
 
 // Vk context object
 // uses ManuallyDrop to control drop order
 pub struct Vk {
     entry: ManuallyDrop<Entry>,
     instance: ManuallyDrop<Instance>,
+    physical_device: ManuallyDrop<PhysicalDevice>,
+    queue_family_idx: u32,
+    device: ManuallyDrop<Device>,
+    queue: ManuallyDrop<Queue>,
 }
 
 impl Vk {
     fn new(display_handle: &dyn HasRawDisplayHandle) -> anyhow::Result<Self> {
         let entry = create_entry()?;
         let instance = create_instance(&entry, display_handle)?;
+        let required_device_extensions = get_required_device_extensions();
+        let physical_device = select_physical_device(&instance, &required_device_extensions)?;
+        let queue_family_idx = find_queue_family_indices(&instance, physical_device);
+        let device = create_device(&instance, physical_device, queue_family_idx, &required_device_extensions)?;
+        let queue = unsafe {
+            device.get_device_queue(queue_family_idx, 0)
+        };
         Ok(Self {
             entry: ManuallyDrop::new(entry),
             instance: ManuallyDrop::new(instance),
+            physical_device: ManuallyDrop::new(physical_device),
+            queue_family_idx,
+            device: ManuallyDrop::new(device),
+            queue: ManuallyDrop::new(queue),
         })
+    }
+
+    pub fn entry(&self) -> &Entry {
+        &self.entry
+    }
+
+    pub fn physical_device(&self) -> &PhysicalDevice {
+        &self.physical_device
+    }
+
+    pub fn queue_family_idx(&self) -> u32 {
+        self.queue_family_idx
+    }
+
+    pub fn device(&self) -> &Device {
+        &self.device
+    }
+
+    pub fn queue(&self) -> &Queue {
+        &self.queue
     }
 }
 
 impl Drop for Vk {
     fn drop(&mut self) {
         unsafe {
+            ManuallyDrop::drop(&mut self.device);
+            ManuallyDrop::drop(&mut self.physical_device);
             ManuallyDrop::drop(&mut self.instance);
             ManuallyDrop::drop(&mut self.entry);
         }
@@ -99,66 +137,14 @@ pub fn run(mut app: impl App) -> anyhow::Result<()> {
     Ok(())
 }
 
-fn create_entry() -> anyhow::Result<Entry> {
-    Ok(Entry::linked())
-}
-
-fn create_instance(entry: &Entry, display_handle: &dyn HasRawDisplayHandle) -> anyhow::Result<Instance> {
-    let mut required_extensions: Vec<_> = enumerate_required_extensions(display_handle.raw_display_handle())?
-        .iter()
-        .map(|e| unsafe { CString::from(CStr::from_ptr(*e)) })
-        .collect();
-
-    let mut instance_create_flags = vk::InstanceCreateFlags::empty();
-    // required by MoltenVK
-    #[cfg(target_os = "macos")]
-    {
-        required_extensions
-            .push(CString::new("VK_KHR_portability_enumeration").unwrap());
-        instance_create_flags |= vk::InstanceCreateFlags::ENUMERATE_PORTABILITY_KHR;
-    }
-
-    let required_extensions_ptr: Vec<_> =
-        required_extensions.iter().map(|arg| arg.as_ptr()).collect();
-
-    let layers = if cfg!(feature = "validation_layers") {
-        let required_layers = HashSet::from(["VK_LAYER_KHRONOS_validation"]);
-
-        let res: Vec<_> = entry
-            .enumerate_instance_layer_properties()
-            .expect(
-                "validation layers should be available when `validation_layers` feature is enabled.",
-            )
-            .iter()
-            .map(|layer_info| layer_info.layer_name)
-            .filter(|e| unsafe {
-                let c_str = CStr::from_ptr(e.as_ptr());
-                required_layers.contains(c_str.to_str().unwrap())
-            })
-            .collect();
-
-        if required_layers.len() != res.len() {
-            panic!("required layers not found");
-        }
-
-        res
-    } else {
-        vec![]
-    };
-
-    let layers_ptr = layers
-        .iter()
-        .map(|l| l.as_ptr())
-        .collect::<Vec<*const c_char>>();
-
-    let create_info = InstanceCreateInfo::builder()
-        .enabled_extension_names(required_extensions_ptr.as_slice())
-        .enabled_layer_names(layers_ptr.as_slice())
-        .flags(instance_create_flags)
-        .application_info(&ApplicationInfo::builder().api_version(API_VERSION_1_2).build())
-        .build();
-
-    unsafe {
-        entry.create_instance(&create_info, None).context("failed to create instance")
-    }
+fn get_required_device_extensions() -> Vec<CString> {
+    vec![
+        // required by MoltenVK
+        unsafe { CStr::from_ptr("VK_KHR_portability_subset\0".as_ptr().cast()) },
+        ash::extensions::khr::Swapchain::name(),
+        ash::extensions::khr::DynamicRendering::name(),
+    ]
+        .into_iter()
+        .map(|e| CString::from(e))
+        .collect()
 }
