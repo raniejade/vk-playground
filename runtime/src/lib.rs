@@ -1,5 +1,6 @@
 use std::ffi::{CStr, CString};
 use std::mem::ManuallyDrop;
+use std::ops::Deref;
 
 use anyhow::Context;
 use ash::{Device, Entry, Instance};
@@ -16,6 +17,8 @@ mod vk_utils;
 // uses ManuallyDrop to control drop order
 pub struct Vk {
     entry: ManuallyDrop<Entry>,
+    khr_surface: ManuallyDrop<ash::extensions::khr::Surface>,
+    khr_swapchain: ManuallyDrop<ash::extensions::khr::Swapchain>,
     instance: ManuallyDrop<Instance>,
     physical_device: ManuallyDrop<PhysicalDevice>,
     queue_family_idx: u32,
@@ -31,11 +34,15 @@ impl Vk {
         let physical_device = select_physical_device(&instance, &required_device_extensions)?;
         let queue_family_idx = find_queue_family_indices(&instance, physical_device);
         let device = create_device(&instance, physical_device, queue_family_idx, &required_device_extensions)?;
+        let khr_surface = ash::extensions::khr::Surface::new(&entry, &instance);
+        let khr_swapchain = ash::extensions::khr::Swapchain::new(&instance, &device);
         let queue = unsafe {
             device.get_device_queue(queue_family_idx, 0)
         };
         Ok(Self {
             entry: ManuallyDrop::new(entry),
+            khr_surface: ManuallyDrop::new(khr_surface),
+            khr_swapchain: ManuallyDrop::new(khr_swapchain),
             instance: ManuallyDrop::new(instance),
             physical_device: ManuallyDrop::new(physical_device),
             queue_family_idx,
@@ -46,6 +53,14 @@ impl Vk {
 
     pub fn entry(&self) -> &Entry {
         &self.entry
+    }
+
+    pub fn khr_surface(&self) -> &ash::extensions::khr::Surface {
+        &self.khr_surface
+    }
+
+    pub fn khr_swapchain(&self) -> &ash::extensions::khr::Swapchain {
+        &self.khr_swapchain
     }
 
     pub fn instance(&self) -> &Instance {
@@ -72,9 +87,9 @@ impl Vk {
 impl Drop for Vk {
     fn drop(&mut self) {
         unsafe {
-            ManuallyDrop::drop(&mut self.device);
+            self.device.destroy_device(None);
             ManuallyDrop::drop(&mut self.physical_device);
-            ManuallyDrop::drop(&mut self.instance);
+            self.instance.destroy_instance(None);
             ManuallyDrop::drop(&mut self.entry);
         }
     }
@@ -94,6 +109,14 @@ impl AppContext {
 
     pub fn main_window(&self) -> &Window {
         &self.main_window
+    }
+}
+
+impl Drop for AppContext {
+    fn drop(&mut self) {
+        unsafe {
+            self.vk.khr_surface.destroy_surface(self.main_surface, None);
+        }
     }
 }
 
