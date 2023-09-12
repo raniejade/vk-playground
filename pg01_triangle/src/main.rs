@@ -8,6 +8,7 @@ impl App for MyApp {
     }
 
     fn frame(&mut self, ctx: &mut AppContext) -> anyhow::Result<()> {
+        // let idx = ctx.acquire_next_image_from_swapchain(u64::MAX, None, None)?;
         Ok(())
     }
 }

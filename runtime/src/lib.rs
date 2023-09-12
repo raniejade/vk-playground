@@ -4,10 +4,10 @@ use std::ops::Deref;
 
 use anyhow::Context;
 use ash::vk::{
-    ColorSpaceKHR, ComponentMapping, CompositeAlphaFlagsKHR, Extent2D, Format, Image,
+    ColorSpaceKHR, ComponentMapping, CompositeAlphaFlagsKHR, Extent2D, Fence, Format, Image,
     ImageAspectFlags, ImageSubresourceRange, ImageUsageFlags, ImageView, ImageViewCreateInfo,
-    ImageViewType, PhysicalDevice, PresentModeKHR, Queue, SurfaceKHR, SurfaceTransformFlagsKHR,
-    SwapchainCreateInfoKHR, SwapchainKHR,
+    ImageViewType, PhysicalDevice, PresentModeKHR, Queue, Semaphore, SurfaceKHR,
+    SurfaceTransformFlagsKHR, SwapchainCreateInfoKHR, SwapchainKHR,
 };
 use ash::{Device, Entry, Instance};
 use glfw::ClientApiHint::NoApi;
@@ -139,6 +139,37 @@ impl AppContext {
 
     pub fn main_window(&self) -> &Window {
         &self.main_window
+    }
+
+    // fails if swapchain is OUT_OF_DATE or SUBOPTIMAL
+    // which is unlikely since we are already explicitly handling framebuffer resizes
+    pub fn acquire_next_image_from_swapchain(
+        &mut self,
+        timeout: u64,
+        semaphore: Option<&Semaphore>,
+        fence: Option<&Fence>,
+    ) -> anyhow::Result<u32> {
+        let swapchain = self.get_swapchain_holder()?;
+        let vk_semaphore = semaphore.map_or(Semaphore::null(), |e| e.clone());
+        let vk_fence = fence.map_or(Fence::null(), |e| e.clone());
+        unsafe {
+            self.vk
+                .khr_swapchain
+                .acquire_next_image(swapchain.swapchain, timeout, vk_semaphore, vk_fence)
+                .map(|e| e.0)
+                .context("failed to fetch next available image from swapchain")
+        }
+    }
+
+    pub fn get_swapchain_image_view(&self, idx: u32) -> anyhow::Result<&ImageView> {
+        let swapchain = self.get_swapchain_holder()?;
+        Ok(swapchain.image_views.get(idx as usize).unwrap())
+    }
+
+    fn get_swapchain_holder(&self) -> anyhow::Result<&SwapchainHolder> {
+        self.swapchain
+            .as_ref()
+            .context("swapchain not initialized!")
     }
 
     fn recreate_swapchain(&mut self, app: &impl App) -> anyhow::Result<()> {
